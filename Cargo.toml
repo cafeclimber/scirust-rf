@@ -1,0 +1,12 @@
+[package]
+name = "scirust_rf"
+version = "0.1.0"
+authors = ["rdcampbell"]
+edition = "2018"
+
+[dependencies]
+ndarray = "0.12.1"
+num = "0.2.0"
+regex = "1"
+nom = "^4.2"
+itertools = "0.8"
