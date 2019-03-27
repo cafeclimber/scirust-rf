@@ -52,6 +52,18 @@ pub struct Frequency {
     npoints: usize,
 }
 
+impl From<Vec<f32>> for Frequency {
+    fn from(freqs: Vec<f32>) -> Self {
+        let temp = freqs.clone();
+        Frequency {
+            f: Array::from_vec(temp),
+            start: freqs[0],
+            stop: freqs.last().cloned().unwrap(),
+            npoints: freqs.len(),
+        }
+    }
+}
+
 impl Frequency {
     pub fn new(start: f32, stop: f32, npoints: Option<usize>, unit: Option<FreqUnit>) -> Self {
         let n = match npoints {

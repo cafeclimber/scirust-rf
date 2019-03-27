@@ -94,6 +94,7 @@ pub struct Touchstone {
     version: TouchstoneVersion,
     comments: Vec<String>,
     num_ports: Option<usize>,
+    freqs: Vec<f32>,
     num_freq_points: Option<usize>,
     num_noise_freq_points: Option<usize>,
     reference: Option<Vec<f32>>,
@@ -104,6 +105,14 @@ pub struct Touchstone {
 }
 
 impl Touchstone {
+    pub fn freqs(&self) -> Vec<f32> {
+        self.freqs.clone()
+    }
+
+    pub fn s_params(&self) -> Array3<num::Complex<f32>> {
+        self.s_params.clone()
+    }
+
     pub fn new(path: &Path) -> Result<Self, ParseError> {
         let mut touchstone = Touchstone::default();
 
@@ -135,7 +144,6 @@ impl Touchstone {
         let mut row = 1;
         let mut new_row = true;
         let mut temp_row: (f32, Vec<f32>) = (0., vec![]);
-        let mut freqs = vec![];
         let mut matrix_data = vec![];
         loop {
             line_buf.clear();
@@ -210,7 +218,7 @@ impl Touchstone {
                 if new_row {
                     row = 1;
                     temp_row = (0., vec![]);
-                    freqs.push(chunked[0]);
+                    touchstone.freqs.push(chunked[0]);
                     chunked.remove(0);
                     new_row = false;
                 }
@@ -274,7 +282,7 @@ impl fmt::Debug for Touchstone {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Touchstone:\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+            "Touchstone:\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
             format!("\tFilename: {:?}", self.filename),
             format!("\tVersion: {:?}", self.version),
             format!("\tOptions: {:?}", self.options),
@@ -283,6 +291,7 @@ impl fmt::Debug for Touchstone {
             format!("\tNumber of Noise Points: {:?}", self.num_noise_freq_points),
             format!("\tReference: {:?}", self.reference),
             format!("\tRank: {:?}", self.rank),
+            format!("\tFreqs: {:?}", self.freqs.len()),
             format!(
                 "\tS Parameters: ndarray::Array3<Complex<f32>>{:?}",
                 self.s_params.shape()

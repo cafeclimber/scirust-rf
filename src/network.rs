@@ -1,9 +1,10 @@
 use std::path::Path;
 
-use ndarray::array;
 use ndarray::prelude::*;
+use num::complex::Complex;
 
-use crate::frequency::{FreqUnit, Frequency};
+use crate::frequency::Frequency;
+use crate::touchstone::Touchstone;
 
 #[derive(PartialEq)]
 struct Network {
@@ -13,17 +14,18 @@ struct Network {
 }
 
 impl Network {
-    fn new(f: Frequency, s: Array3<num::Complex<f32>>, z0: Array2<num::Complex<f32>>) -> Self {
+    pub fn new(f: Frequency, s: Array3<num::Complex<f32>>, z0: Array2<num::Complex<f32>>) -> Self {
         Network { f, s, z0 }
     }
 
-    /*fn from_snp(file: &Path) -> Self {
-        // Check that sNp is in s-parameter format
-        // Get comments
-        // Get port names
-        // Get z0
-        // Get sparameters
-    }*/
+    pub fn from_snp(file: &Path) -> Result<Self, crate::result::ParseError> {
+        let touchstone = Touchstone::new(file)?;
+        Ok(Network {
+            f: Frequency::from(touchstone.freqs()),
+            s: touchstone.s_params(),
+            z0: Array::from_elem((1, touchstone.freqs().len()), Complex::new(50., 0.)),
+        })
+    }
 }
 
 #[cfg(test)]
