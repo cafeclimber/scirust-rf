@@ -10,6 +10,8 @@ use num::Complex;
 
 use crate::frequency::FreqUnit;
 use crate::result::ParseError;
+use crate::CxArray3;
+
 
 #[derive(PartialEq, Debug)]
 enum TouchstoneVersion {
@@ -99,9 +101,9 @@ pub struct Touchstone {
     num_noise_freq_points: Option<usize>,
     reference: Option<Vec<f64>>,
     options: TouchstoneOptions,
-    s_params: Array3<num::Complex<f64>>,
+    s_params: CxArray3,
     rank: usize,
-    noise: Array3<num::Complex<f64>>,
+    noise: Option<CxArray3>,
 }
 
 impl Touchstone {
@@ -109,7 +111,7 @@ impl Touchstone {
         self.freqs.clone()
     }
 
-    pub fn s_params(&self) -> Array3<num::Complex<f64>> {
+    pub fn s_params(&self) -> CxArray3 {
         self.s_params.clone()
     }
 
@@ -179,10 +181,9 @@ impl Touchstone {
                 if line.trim_start_matches("[reference]").trim() == "" {
                     line.clear();
                     buf_reader.read_line(&mut line).unwrap();
-                } else {
-                    touchstone.reference =
-                        Some(line.split(' ').map(|r| r.parse::<f64>().unwrap()).collect());
                 }
+                touchstone.reference =
+                    Some(line.trim_end().split(' ').map(|r| r.parse::<f64>().unwrap()).collect());
             } else if line.starts_with("[number of ports]") {
                 touchstone.num_ports = line
                     .trim_start_matches("[number of ports]")
@@ -296,7 +297,7 @@ mod tests {
     use super::*;
     use ndarray::array;
     use ndarray::prelude::*;
-    
+
     #[test]
     fn test_hfss_s2p() {
         let path = std::path::PathBuf::from("tests/hfss_twoport.s2p");
@@ -328,7 +329,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cst_example_6ports_V2_s6p() {
+    fn test_cst_example_6ports_v2_s6p() {
         let path = std::path::PathBuf::from("tests/cst_example_6ports_V2.s6p");
         let touchstone = Touchstone::new(&path).unwrap();
         assert_eq!(touchstone.s_params.dim(), (1001, 6, 6));
@@ -336,6 +337,7 @@ mod tests {
         assert_eq!(touchstone.options.param_type, ParamType::S);
         assert_eq!(touchstone.options.param_format, ParamFormat::MagAngle);
         assert_eq!(touchstone.options.resistance, 15.063);
+        assert_eq!(touchstone.reference, Some(vec![15.063, 15.063, 15.063, 15.063, 15.063, 15.063]));
     }
 
     #[test]
@@ -357,7 +359,7 @@ mod tests {
                 [
                     Complex::new(0.0165040395, -0.165812914),
                     Complex::new(0.92149708, -0.186257735)
-                ], 
+                ],
                 [
                     Complex::new(0.92149708, -0.186257735),
                     Complex::new(0.0185387559, -0.133078528)
@@ -367,7 +369,7 @@ mod tests {
                 [
                     Complex::new(0.0107648639, -0.179877134),
                     Complex::new(0.915799359, -0.202194824)
-                ], 
+                ],
                 [
                     Complex::new(0.915799359, -0.202194824),
                     Complex::new(0.0131812086, -0.144202856)
@@ -377,7 +379,7 @@ mod tests {
                 [
                     Complex::new(0.00458796245, -0.193689477),
                     Complex::new(0.909666648, -0.217883591)
-                ], 
+                ],
                 [
                     Complex::new(0.909666648, -0.217883591),
                     Complex::new(0.00741732005, -0.155084364)

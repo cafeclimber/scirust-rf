@@ -6,10 +6,16 @@ mod frequency;
 mod network;
 pub mod touchstone;
 
+use num::complex::Complex;
+use ndarray::prelude::{Array2, Array3};
+
 mod result {
     #[derive(Debug)]
     pub struct ParseError;
 }
+
+type CxArray2 = Array2<Complex<f64>>;
+type CxArray3 = Array3<Complex<f64>>;
 
 #[cfg(test)]
 mod tests {
