@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use ndarray::prelude::*;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum FreqUnit {
     Hz,
     KHz,
@@ -28,10 +28,10 @@ impl FromStr for FreqUnit {
     }
 }
 
-impl Mul<f32> for FreqUnit {
-    type Output = f32;
+impl Mul<f64> for FreqUnit {
+    type Output = f64;
 
-    fn mul(self, rhs: f32) -> f32 {
+    fn mul(self, rhs: f64) -> f64 {
         use FreqUnit::*;
         match self {
             Hz => rhs,
@@ -46,14 +46,14 @@ impl Mul<f32> for FreqUnit {
 /// Represents a frequency band
 #[derive(PartialEq, Debug)]
 pub struct Frequency {
-    f: Array1<f32>,
-    start: f32,
-    stop: f32,
+    f: Array1<f64>,
+    start: f64,
+    stop: f64,
     npoints: usize,
 }
 
-impl From<Vec<f32>> for Frequency {
-    fn from(freqs: Vec<f32>) -> Self {
+impl From<Vec<f64>> for Frequency {
+    fn from(freqs: Vec<f64>) -> Self {
         let temp = freqs.clone();
         Frequency {
             f: Array::from_vec(temp),
@@ -65,7 +65,7 @@ impl From<Vec<f32>> for Frequency {
 }
 
 impl Frequency {
-    pub fn new(start: f32, stop: f32, npoints: Option<usize>, unit: Option<FreqUnit>) -> Self {
+    pub fn new(start: f64, stop: f64, npoints: Option<usize>, unit: Option<FreqUnit>) -> Self {
         let n = match npoints {
             Some(n) => n,
             None => 0,

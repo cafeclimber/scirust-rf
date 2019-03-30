@@ -11,7 +11,7 @@ use num::Complex;
 use crate::frequency::FreqUnit;
 use crate::result::ParseError;
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 enum TouchstoneVersion {
     One,
     Two,
@@ -23,7 +23,7 @@ impl Default for TouchstoneVersion {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 enum ParamType {
     S,
     Y,
@@ -48,7 +48,7 @@ impl FromStr for ParamType {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 enum ParamFormat {
     DBAngle,
     MagAngle,
@@ -74,7 +74,7 @@ struct TouchstoneOptions {
     unit: FreqUnit,
     param_type: ParamType,
     param_format: ParamFormat,
-    resistance: f32,
+    resistance: f64,
 }
 
 impl Default for TouchstoneOptions {
@@ -94,22 +94,22 @@ pub struct Touchstone {
     version: TouchstoneVersion,
     comments: Vec<String>,
     num_ports: Option<usize>,
-    freqs: Vec<f32>,
+    freqs: Vec<f64>,
     num_freq_points: Option<usize>,
     num_noise_freq_points: Option<usize>,
-    reference: Option<Vec<f32>>,
+    reference: Option<Vec<f64>>,
     options: TouchstoneOptions,
-    s_params: Array3<num::Complex<f32>>,
+    s_params: Array3<num::Complex<f64>>,
     rank: usize,
-    noise: Array3<num::Complex<f32>>,
+    noise: Array3<num::Complex<f64>>,
 }
 
 impl Touchstone {
-    pub fn freqs(&self) -> Vec<f32> {
+    pub fn freqs(&self) -> Vec<f64> {
         self.freqs.clone()
     }
 
-    pub fn s_params(&self) -> Array3<num::Complex<f32>> {
+    pub fn s_params(&self) -> Array3<num::Complex<f64>> {
         self.s_params.clone()
     }
 
@@ -141,10 +141,7 @@ impl Touchstone {
         let file = File::open(path).unwrap();
         let mut buf_reader = BufReader::new(file);
         let mut line_buf = String::new();
-        let mut row = 1;
-        let mut new_row = true;
-        let mut temp_row: (f32, Vec<f32>) = (0., vec![]);
-        let mut matrix_data = vec![];
+        let mut temp_s_params: Vec<Complex<f64>> = vec![];
         loop {
             line_buf.clear();
             if buf_reader
@@ -184,7 +181,7 @@ impl Touchstone {
                     buf_reader.read_line(&mut line).unwrap();
                 } else {
                     touchstone.reference =
-                        Some(line.split(' ').map(|r| r.parse::<f32>().unwrap()).collect());
+                        Some(line.split(' ').map(|r| r.parse::<f64>().unwrap()).collect());
                 }
             } else if line.starts_with("[number of ports]") {
                 touchstone.num_ports = line
@@ -211,42 +208,34 @@ impl Touchstone {
                 parse_options_line(&line, &mut touchstone.options)?;
                 options_read = true;
             } else {
-                let mut chunked: Vec<f32> = line
+                let mut chunked: Vec<f64> = line
                     .split_whitespace()
-                    .map(|v| v.parse::<f32>().unwrap())
+                    .map(|v| v.parse::<f64>().unwrap())
                     .collect();
-                if new_row {
-                    row = 1;
-                    temp_row = (0., vec![]);
+                // If the line starts with a frequency or if all data is contained in one line
+                if chunked.len() == (touchstone.rank * 2) + 1
+                    || chunked.len() == 2 * num::pow(touchstone.rank, 2) + 1
+                {
                     touchstone.freqs.push(chunked[0]);
                     chunked.remove(0);
-                    new_row = false;
                 }
-                if row <= touchstone.rank {
-                    temp_row.1.append(&mut chunked);
-                    row += 1;
-                    // If the second condition is true, it means the file stores all data for one
-                    // frequency on one line
-                    if row > touchstone.rank || temp_row.1.len() == 2 * (touchstone.rank.pow(2)) {
-                        new_row = true;
-                        let pairs_iter = temp_row.1.chunks(2);
-                        let complex_vec: Vec<Complex<f32>> = pairs_iter
-                            .map(|pair| Complex::new(pair[0], pair[1]))
-                            .collect();
-                        matrix_data.push(complex_vec);
-                    }
-                }
+                let pairs_iter = chunked.chunks(2);
+                let mut temp: Vec<Complex<f64>> = pairs_iter
+                    .map(|pair| Complex::new(pair[0], pair[1]))
+                    .collect();
+                temp_s_params.append(&mut temp);
             }
         }
-        let mut array_3d: Array3<Complex<f32>> =
-            Array3::zeros((matrix_data.len(), touchstone.rank, touchstone.rank));
-        for (i, mut v) in array_3d.axis_iter_mut(Axis(0)).enumerate() {
-            let temp =
-                Array::from_shape_vec((touchstone.rank, touchstone.rank), matrix_data[i].clone())
-                    .unwrap();
-            v.assign(&temp);
-        }
-        touchstone.s_params = array_3d;
+        touchstone.s_params = match Array::from_shape_vec(
+            (touchstone.freqs.len(), touchstone.rank, touchstone.rank),
+            temp_s_params,
+        ) {
+            Ok(s_params) => {
+                println!("{:?}", s_params);
+                s_params
+            }
+            _ => return Err(ParseError),
+        };
         Ok(touchstone)
     }
 }
@@ -269,7 +258,7 @@ fn parse_options_line(line: &str, options: &mut TouchstoneOptions) -> Result<(),
                 _ => { /* Do nothing */ }
             }
         } else if *entry == "r" {
-            options.resistance = match split_line[index + 1].parse::<f32>() {
+            options.resistance = match split_line[index + 1].parse::<f64>() {
                 Ok(r) => r,
                 Err(_) => return Err(ParseError),
             }
@@ -293,11 +282,112 @@ impl fmt::Debug for Touchstone {
             format!("\tRank: {:?}", self.rank),
             format!("\tFreqs: {:?}", self.freqs.len()),
             format!(
-                "\tS Parameters: ndarray::Array3<Complex<f32>>{:?}",
+                "\tS Parameters: ndarray::Array3<Complex<f64>>{:?}",
                 self.s_params.shape()
             ),
             format!("\tNoise: \n{:?}", self.noise),
             format!("\tComments: \n{:?}", self.comments),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::array;
+    use ndarray::prelude::*;
+    
+    #[test]
+    fn test_hfss_s2p() {
+        let path = std::path::PathBuf::from("tests/hfss_twoport.s2p");
+        let touchstone = Touchstone::new(&path).unwrap();
+        assert_eq!(touchstone.s_params.dim(), (101, 2, 2));
+        assert_eq!(touchstone.options.unit, FreqUnit::GHz);
+        assert_eq!(touchstone.options.param_type, ParamType::S);
+        assert_eq!(touchstone.options.param_format, ParamFormat::MagAngle);
+    }
+
+    #[test]
+    fn test_hfss_s3p() {
+        let path = std::path::PathBuf::from("tests/hfss_threeport_DB.s3p");
+        let touchstone = Touchstone::new(&path).unwrap();
+        assert_eq!(touchstone.s_params.dim(), (451, 3, 3));
+        assert_eq!(touchstone.options.unit, FreqUnit::GHz);
+        assert_eq!(touchstone.options.param_type, ParamType::S);
+        assert_eq!(touchstone.options.param_format, ParamFormat::DBAngle);
+    }
+
+    #[test]
+    fn test_cst_example_4ports_s4p() {
+        let path = std::path::PathBuf::from("tests/cst_example_4ports.s4p");
+        let touchstone = Touchstone::new(&path).unwrap();
+        assert_eq!(touchstone.s_params.dim(), (601, 4, 4));
+        assert_eq!(touchstone.options.unit, FreqUnit::MHz);
+        assert_eq!(touchstone.options.param_type, ParamType::S);
+        assert_eq!(touchstone.options.param_format, ParamFormat::MagAngle);
+    }
+
+    #[test]
+    fn test_cst_example_6ports_V2_s6p() {
+        let path = std::path::PathBuf::from("tests/cst_example_6ports_V2.s6p");
+        let touchstone = Touchstone::new(&path).unwrap();
+        assert_eq!(touchstone.s_params.dim(), (1001, 6, 6));
+        assert_eq!(touchstone.options.unit, FreqUnit::MHz);
+        assert_eq!(touchstone.options.param_type, ParamType::S);
+        assert_eq!(touchstone.options.param_format, ParamFormat::MagAngle);
+        assert_eq!(touchstone.options.resistance, 15.063);
+    }
+
+    #[test]
+    fn test_simple_s2p() {
+        let path = std::path::PathBuf::from("tests/ntwk_arbitrary_frequency.s2p");
+        let touchstone = Touchstone::new(&path).unwrap();
+        let good_array = array![
+            [
+                [
+                    Complex::new(0.0217920488, -0.151514165),
+                    Complex::new(0.926746562, -0.170089428)
+                ],
+                [
+                    Complex::new(0.926746562, -0.170089428),
+                    Complex::new(0.0234769169, -0.121728077)
+                ]
+            ],
+            [
+                [
+                    Complex::new(0.0165040395, -0.165812914),
+                    Complex::new(0.92149708, -0.186257735)
+                ], 
+                [
+                    Complex::new(0.92149708, -0.186257735),
+                    Complex::new(0.0185387559, -0.133078528)
+                ]
+            ],
+            [
+                [
+                    Complex::new(0.0107648639, -0.179877134),
+                    Complex::new(0.915799359, -0.202194824)
+                ], 
+                [
+                    Complex::new(0.915799359, -0.202194824),
+                    Complex::new(0.0131812086, -0.144202856)
+                ]
+            ],
+            [
+                [
+                    Complex::new(0.00458796245, -0.193689477),
+                    Complex::new(0.909666648, -0.217883591)
+                ], 
+                [
+                    Complex::new(0.909666648, -0.217883591),
+                    Complex::new(0.00741732005, -0.155084364)
+                ]
+            ]
+        ];
+        assert_eq!(touchstone.s_params, good_array);
+        assert_eq!(touchstone.freqs, vec![1., 4., 10., 20.]);
+        assert_eq!(touchstone.options.unit, FreqUnit::Hz);
+        assert_eq!(touchstone.options.param_type, ParamType::S);
+        assert_eq!(touchstone.options.param_format, ParamFormat::RealImag);
     }
 }

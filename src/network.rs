@@ -9,12 +9,12 @@ use crate::touchstone::Touchstone;
 #[derive(PartialEq)]
 struct Network {
     f: Frequency,
-    s: Array3<num::Complex<f32>>,
-    z0: Array2<num::Complex<f32>>,
+    s: Array3<num::Complex<f64>>,
+    z0: Array2<num::Complex<f64>>,
 }
 
 impl Network {
-    pub fn new(f: Frequency, s: Array3<num::Complex<f32>>, z0: Array2<num::Complex<f32>>) -> Self {
+    pub fn new(f: Frequency, s: Array3<num::Complex<f64>>, z0: Array2<num::Complex<f64>>) -> Self {
         Network { f, s, z0 }
     }
 
