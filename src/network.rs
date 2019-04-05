@@ -4,18 +4,17 @@ use ndarray::prelude::*;
 use num::complex::Complex;
 
 use crate::frequency::Frequency;
-use crate::touchstone::Touchstone;
-use crate::{CxArray2, CxArray3};
+use crate::io::touchstone::Touchstone;
 
-#[derive(PartialEq)]
-struct Network {
+#[derive(Debug, PartialEq)]
+pub struct Network {
     f: Frequency,
-    s: CxArray3,
-    z0: CxArray2,
+    s: Array3<Complex<f64>>,
+    z0: Array2<Complex<f64>>,
 }
 
 impl Network {
-    pub fn new(f: Frequency, s: CxArray3, z0: CxArray2) -> Self {
+    pub fn new(f: Frequency, s: Array3<Complex<f64>>, z0: Array2<Complex<f64>>) -> Self {
         Network { f, s, z0 }
     }
 

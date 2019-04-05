@@ -10,8 +10,6 @@ use num::Complex;
 
 use crate::frequency::FreqUnit;
 use crate::result::ParseError;
-use crate::CxArray3;
-
 
 #[derive(PartialEq, Debug)]
 enum TouchstoneVersion {
@@ -101,9 +99,9 @@ pub struct Touchstone {
     num_noise_freq_points: Option<usize>,
     reference: Option<Vec<f64>>,
     options: TouchstoneOptions,
-    s_params: CxArray3,
+    params: Vec<f64>,
     rank: usize,
-    noise: Option<CxArray3>,
+    noise: Option<Vec<f64>>,
 }
 
 impl Touchstone {
@@ -111,8 +109,51 @@ impl Touchstone {
         self.freqs.clone()
     }
 
-    pub fn s_params(&self) -> CxArray3 {
-        self.s_params.clone()
+    pub fn s_params(&self) -> Array3<Complex<f64>> {
+        if self.options.param_type != ParamType::S {
+            panic!("Only S parameters are implemented.");
+        }
+        match self.options.param_format {
+            ParamFormat::DBAngle => {
+                let pairs = self.params.chunks(2);
+                Array::from_shape_vec(
+                    (self.freqs.len(), self.rank, self.rank),
+                    pairs
+                        .map(|pair| {
+                            let mag = 10f64.powf(pair[0] / 20.);
+                            Complex::new(
+                                mag * pair[1].to_radians().cos(),
+                                mag * pair[1].to_radians().sin(),
+                            )
+                        })
+                        .collect(),
+                )
+                .unwrap()
+            }
+            ParamFormat::MagAngle => {
+                let pairs = self.params.chunks(2);
+                Array::from_shape_vec(
+                    (self.freqs.len(), self.rank, self.rank),
+                    pairs
+                        .map(|pair| {
+                            Complex::new(
+                                pair[0] * pair[1].to_radians().cos(),
+                                pair[0] * pair[1].to_radians().sin(),
+                            )
+                        })
+                        .collect(),
+                )
+                .unwrap()
+            }
+            ParamFormat::RealImag => {
+                let pairs = self.params.chunks(2);
+                Array::from_shape_vec(
+                    (self.freqs.len(), self.rank, self.rank),
+                    pairs.map(|pair| Complex::new(pair[0], pair[1])).collect(),
+                )
+                .unwrap()
+            }
+        }
     }
 
     pub fn new(path: &Path) -> Result<Self, ParseError> {
@@ -143,7 +184,7 @@ impl Touchstone {
         let file = File::open(path).unwrap();
         let mut buf_reader = BufReader::new(file);
         let mut line_buf = String::new();
-        let mut temp_s_params: Vec<Complex<f64>> = vec![];
+        let mut params: Vec<f64> = vec![];
         loop {
             line_buf.clear();
             if buf_reader
@@ -182,8 +223,12 @@ impl Touchstone {
                     line.clear();
                     buf_reader.read_line(&mut line).unwrap();
                 }
-                touchstone.reference =
-                    Some(line.trim_end().split(' ').map(|r| r.parse::<f64>().unwrap()).collect());
+                touchstone.reference = Some(
+                    line.trim_end()
+                        .split(' ')
+                        .map(|r| r.parse::<f64>().unwrap())
+                        .collect(),
+                );
             } else if line.starts_with("[number of ports]") {
                 touchstone.num_ports = line
                     .trim_start_matches("[number of ports]")
@@ -220,23 +265,10 @@ impl Touchstone {
                     touchstone.freqs.push(chunked[0]);
                     chunked.remove(0);
                 }
-                let pairs_iter = chunked.chunks(2);
-                let mut temp: Vec<Complex<f64>> = pairs_iter
-                    .map(|pair| Complex::new(pair[0], pair[1]))
-                    .collect();
-                temp_s_params.append(&mut temp);
+                params.append(&mut chunked);
             }
         }
-        touchstone.s_params = match Array::from_shape_vec(
-            (touchstone.freqs.len(), touchstone.rank, touchstone.rank),
-            temp_s_params,
-        ) {
-            Ok(s_params) => {
-                println!("{:?}", s_params);
-                s_params
-            }
-            _ => return Err(ParseError),
-        };
+        touchstone.params = params;
         Ok(touchstone)
     }
 }
@@ -282,10 +314,7 @@ impl fmt::Debug for Touchstone {
             format!("\tReference: {:?}", self.reference),
             format!("\tRank: {:?}", self.rank),
             format!("\tFreqs: {:?}", self.freqs.len()),
-            format!(
-                "\tS Parameters: ndarray::Array3<Complex<f64>>{:?}",
-                self.s_params.shape()
-            ),
+            format!("\tParameters: Vec<f64>{:?}", self.params),
             format!("\tNoise: \n{:?}", self.noise),
             format!("\tComments: \n{:?}", self.comments),
         )
@@ -302,7 +331,7 @@ mod tests {
     fn test_hfss_s2p() {
         let path = std::path::PathBuf::from("tests/hfss_twoport.s2p");
         let touchstone = Touchstone::new(&path).unwrap();
-        assert_eq!(touchstone.s_params.dim(), (101, 2, 2));
+        assert_eq!(touchstone.params.len(), 101 * 2 * 2 * 2);
         assert_eq!(touchstone.options.unit, FreqUnit::GHz);
         assert_eq!(touchstone.options.param_type, ParamType::S);
         assert_eq!(touchstone.options.param_format, ParamFormat::MagAngle);
@@ -312,7 +341,7 @@ mod tests {
     fn test_hfss_s3p() {
         let path = std::path::PathBuf::from("tests/hfss_threeport_DB.s3p");
         let touchstone = Touchstone::new(&path).unwrap();
-        assert_eq!(touchstone.s_params.dim(), (451, 3, 3));
+        assert_eq!(touchstone.params.len(), 451 * 3 * 3 * 2);
         assert_eq!(touchstone.options.unit, FreqUnit::GHz);
         assert_eq!(touchstone.options.param_type, ParamType::S);
         assert_eq!(touchstone.options.param_format, ParamFormat::DBAngle);
@@ -322,7 +351,7 @@ mod tests {
     fn test_cst_example_4ports_s4p() {
         let path = std::path::PathBuf::from("tests/cst_example_4ports.s4p");
         let touchstone = Touchstone::new(&path).unwrap();
-        assert_eq!(touchstone.s_params.dim(), (601, 4, 4));
+        assert_eq!(touchstone.params.len(), 601 * 4 * 4 * 2);
         assert_eq!(touchstone.options.unit, FreqUnit::MHz);
         assert_eq!(touchstone.options.param_type, ParamType::S);
         assert_eq!(touchstone.options.param_format, ParamFormat::MagAngle);
@@ -332,61 +361,29 @@ mod tests {
     fn test_cst_example_6ports_v2_s6p() {
         let path = std::path::PathBuf::from("tests/cst_example_6ports_V2.s6p");
         let touchstone = Touchstone::new(&path).unwrap();
-        assert_eq!(touchstone.s_params.dim(), (1001, 6, 6));
+        assert_eq!(touchstone.params.len(), 1001 * 6 * 6 * 2);
         assert_eq!(touchstone.options.unit, FreqUnit::MHz);
         assert_eq!(touchstone.options.param_type, ParamType::S);
         assert_eq!(touchstone.options.param_format, ParamFormat::MagAngle);
         assert_eq!(touchstone.options.resistance, 15.063);
-        assert_eq!(touchstone.reference, Some(vec![15.063, 15.063, 15.063, 15.063, 15.063, 15.063]));
+        assert_eq!(
+            touchstone.reference,
+            Some(vec![15.063, 15.063, 15.063, 15.063, 15.063, 15.063])
+        );
     }
 
     #[test]
     fn test_simple_s2p() {
         let path = std::path::PathBuf::from("tests/ntwk_arbitrary_frequency.s2p");
         let touchstone = Touchstone::new(&path).unwrap();
-        let good_array = array![
-            [
-                [
-                    Complex::new(0.0217920488, -0.151514165),
-                    Complex::new(0.926746562, -0.170089428)
-                ],
-                [
-                    Complex::new(0.926746562, -0.170089428),
-                    Complex::new(0.0234769169, -0.121728077)
-                ]
-            ],
-            [
-                [
-                    Complex::new(0.0165040395, -0.165812914),
-                    Complex::new(0.92149708, -0.186257735)
-                ],
-                [
-                    Complex::new(0.92149708, -0.186257735),
-                    Complex::new(0.0185387559, -0.133078528)
-                ]
-            ],
-            [
-                [
-                    Complex::new(0.0107648639, -0.179877134),
-                    Complex::new(0.915799359, -0.202194824)
-                ],
-                [
-                    Complex::new(0.915799359, -0.202194824),
-                    Complex::new(0.0131812086, -0.144202856)
-                ]
-            ],
-            [
-                [
-                    Complex::new(0.00458796245, -0.193689477),
-                    Complex::new(0.909666648, -0.217883591)
-                ],
-                [
-                    Complex::new(0.909666648, -0.217883591),
-                    Complex::new(0.00741732005, -0.155084364)
-                ]
-            ]
+        let good_array: Vec<f64> = vec![
+            0.0217920488, -0.151514165, 0.926746562, -0.170089428, 0.926746562, -0.170089428, 0.0234769169, -0.121728077,
+            0.0165040395, -0.165812914, 0.92149708, -0.186257735, 0.92149708, -0.186257735, 0.0185387559, -0.133078528,
+            0.0107648639, -0.179877134, 0.915799359, -0.202194824, 0.915799359, -0.202194824, 0.0131812086, -0.144202856,
+            0.00458796245, -0.193689477, 0.909666648, -0.217883591, 0.909666648, -0.217883591, 0.00741732005, -0.155084364
         ];
-        assert_eq!(touchstone.s_params, good_array);
+        // TODO: fix test to check against known good
+        assert_eq!(touchstone.params, good_array);
         assert_eq!(touchstone.freqs, vec![1., 4., 10., 20.]);
         assert_eq!(touchstone.options.unit, FreqUnit::Hz);
         assert_eq!(touchstone.options.param_type, ParamType::S);
